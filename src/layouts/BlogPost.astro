@@ -1,0 +1,383 @@
+---
+import { Image } from 'astro:assets';
+import type { CollectionEntry } from 'astro:content';
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import CodeEnhancer from '../components/CodeEnhancer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import Ad from '../components/Ad.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import { Icon } from 'astro-icon/components';
+
+type Props = CollectionEntry<'blog'>['data'] & { headings?: any[] };
+
+const { title, description, pubDate, updatedDate, heroImage, categories, headings } = Astro.props;
+const currentSlug = Astro.props.currentSlug || Astro.url.pathname.replace(/^\/blog\//, '').replace(/\/$/, '');
+
+const breadcrumbItems = [
+	{ label: 'ホーム', href: '/' },
+	...(categories && categories.length > 0
+		? [{ label: categories[0], href: `/category/${categories[0]}` }]
+		: []),
+	{ label: title },
+];
+
+---
+
+<html lang="ja">
+	<head>
+		<BaseHead title={title} description={description} image={heroImage} />
+		<style>
+			.hero-image {
+				width: 100%;
+				margin-bottom: 2rem;
+			}
+			.hero-image img {
+				display: block;
+				margin: 0 auto;
+				width: 100%;
+				max-height: 500px;
+				object-fit: cover;
+			}
+			.prose {
+				color: var(--text-main);
+				font-size: 1.05rem;
+			}
+
+			.prose strong {
+				font-weight: 700;
+				background: linear-gradient(transparent 60%, #fff3cd 60%);
+			}
+			.prose table strong {
+				background: none;
+			}
+			.prose table th,
+			.prose table td,
+			.prose table a {
+				word-break: break-all;
+				overflow-wrap: anywhere;
+			}
+			/* 楽天アフィリエイトウィジェット表示の最適化 */
+			.prose table:has(a[href*="rakuten.co.jp"]) {
+				border: none !important;
+				background: transparent !important;
+				margin: 2rem auto !important;
+				max-width: 504px !important;
+				width: 100% !important;
+				box-shadow: none !important;
+				display: table !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) table {
+				border: none !important;
+				background: transparent !important;
+				margin: 0 auto !important;
+				width: 100% !important;
+				box-shadow: none !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) th,
+			.prose table:has(a[href*="rakuten.co.jp"]) td {
+				border: none !important;
+				background: transparent !important;
+				padding: 0 !important;
+				box-shadow: none !important;
+				font-weight: normal !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) img {
+				background-color: transparent !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) a {
+				word-break: normal !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) a div[style*="background-color:#bf0000"],
+			.prose table:has(a[href*="rakuten.co.jp"]) a[href*="bbtn"] div {
+				white-space: nowrap !important;
+				word-break: keep-all !important;
+				width: auto !important;
+				min-width: 84px !important;
+				box-sizing: border-box !important;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) br {
+				display: none;
+			}
+			.prose table:has(a[href*="rakuten.co.jp"]) div[style*="border-radius"] {
+				margin-left: auto !important;
+				margin-right: auto !important;
+				max-width: 100% !important;
+				box-sizing: border-box !important;
+			}
+			@media (max-width: 560px) {
+				.prose table:has(a[href*="rakuten.co.jp"]) table,
+				.prose table:has(a[href*="rakuten.co.jp"]) table tbody,
+				.prose table:has(a[href*="rakuten.co.jp"]) table tr {
+					display: flex !important;
+					flex-direction: column !important;
+					align-items: center !important;
+					width: 100% !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td {
+					width: 100% !important;
+					max-width: 100% !important;
+					display: block !important;
+					text-align: center !important;
+					box-sizing: border-box !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:first-child a {
+					display: inline-block !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:first-child img {
+					max-width: 100% !important;
+					height: auto !important;
+					margin: 0 auto !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:last-child p {
+					text-align: center !important;
+					margin: 8px 0 !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:last-child div {
+					display: flex !important;
+					justify-content: center !important;
+					align-items: center !important;
+					gap: 12px !important;
+					margin: 8px auto !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:last-child div a {
+					float: none !important;
+				}
+				.prose table:has(a[href*="rakuten.co.jp"]) table td:last-child div a:last-child div {
+					float: none !important;
+					width: auto !important;
+					min-width: 110px !important;
+				}
+			}
+			.prose ul, .prose ol {
+				padding-left: 1.5rem;
+				margin-bottom: 1.5rem;
+			}
+			.prose li {
+				margin-bottom: 0.5rem;
+				line-height: 1.8;
+			}
+			.prose blockquote {
+				background: #f0f9ff;
+				border-left: 5px solid var(--theme-accent);
+				padding: 1.2rem 1.5rem;
+				margin: 2rem 0;
+				border-radius: 4px;
+				color: #075985;
+				font-weight: 700;
+				font-size: 1.1rem;
+			}
+			.prose blockquote p {
+				margin: 0;
+			}
+			.title {
+				margin-bottom: 2em;
+				line-height: 1.4;
+			}
+			.title h1 {
+				margin: 0 0 0.5em 0;
+				font-size: 1.8rem;
+			}
+			.date {
+				margin-bottom: 1em;
+				color: var(--text-light);
+				font-size: 0.9em;
+				display: flex;
+				gap: 1em;
+				align-items: center;
+			}
+			.tags {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.5rem;
+				margin-bottom: 1rem;
+			}
+			.tag {
+				display: inline-block;
+				background-color: #e0f2fe;
+				color: #0369a1;
+				padding: 0.2rem 0.6rem;
+				border-radius: 9999px;
+				font-size: 0.85rem;
+				text-decoration: none;
+				font-weight: 600;
+				display: inline-flex;
+				align-items: center;
+				gap: 0.2rem;
+			}
+			.tag:hover {
+				background-color: #bae6fd;
+			}
+			/* Sidebar Widgets */
+			.widget {
+				padding: 1.5rem;
+				margin-bottom: 2rem;
+			}
+			.widget-title {
+				font-size: 1.1rem;
+				color: var(--text-main);
+				background-color: #f7f7f7;
+				padding: 0.5rem 1rem;
+				border-left: 4px solid var(--theme-accent);
+				margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+			}
+			.profile-pic {
+				width: 100px;
+				height: 100px;
+				border-radius: 50%;
+				margin: 0 auto 1rem;
+				background-color: var(--border-color);
+				display: block;
+			}
+			.profile-desc {
+				font-size: 0.9rem;
+				color: var(--text-main);
+				text-align: center;
+				line-height: 1.6;
+			}
+		</style>
+	</head>
+
+	<body>
+		<Header />
+		<main>
+			<div class="layout-container">
+				<!-- メインコンテンツ (左カラム) -->
+				<article class="layout-main">
+					<Breadcrumb items={breadcrumbItems} />
+					<div class="title">
+						<div class="date">
+							<span><Icon name="heroicons:calendar" class="icon-inline" /> <FormattedDate date={pubDate} /></span>
+							{
+								updatedDate && (
+									<span><Icon name="heroicons:arrow-path" class="icon-inline" /> <FormattedDate date={updatedDate} /></span>
+								)
+							}
+						</div>
+						<h1>{title}</h1>
+						{categories && categories.length > 0 && (
+							<div class="tags">
+								{categories.map((category: string) => (
+									<a href={`/category/${category}`} class="tag"><Icon name="heroicons:tag" class="icon-inline" /> {category}</a>
+								))}
+							</div>
+						)}
+					</div>
+					
+					<div class="hero-image">
+						{heroImage && <Image width={1020} height={510} src={heroImage} alt="" />}
+					</div>
+					
+					<div class="prose">
+						<div id="toc-wrapper">
+							{headings && <TableOfContents headings={headings} />}
+						</div>
+						<slot />
+						
+						<!-- 記事下広告 -->
+						<div style="margin-top: 3rem;">
+							<Ad />
+						</div>
+					</div>
+
+					<script is:inline>
+						(() => {
+							const toc = document.getElementById('toc-wrapper');
+							if (!toc) return;
+							if (!toc.querySelector('.toc-container')) return;
+							
+							// 記事本文(.prose)内の最初の見出し(h2, h3, h4)を取得
+							if (firstHeading && firstHeading.parentNode && toc.nextElementSibling !== firstHeading) {
+								firstHeading.parentNode.insertBefore(toc, firstHeading);
+							}
+						})();
+					</script>
+				</article>
+
+				<!-- サイドバー (右カラム) -->
+				<aside class="layout-sidebar">
+					<div class="widget box">
+						<div class="widget-title"><Icon name="heroicons:user" class="icon-inline" /> プロフィール</div>
+						<img class="profile-pic" src="/brand/teluis_avatar.jpg" alt="プロフィール画像" style="width: 100px; height: 100px; border-radius: 50%; margin: 0 auto 1rem; background-color: var(--border-color); display: block; object-fit: cover;" />
+						<p class="profile-desc" style="font-size: 0.9rem; color: var(--text-main); text-align: left; line-height: 1.6;">
+							<strong>ITエンジニア / コンサルタント</strong><br/>
+							日経大手企業でキャリアをスタートし、AIスタートアップでの開発経験を経て、現在はコンサルティングファームに勤務。ビジネスマンに必要なスキルや、日々の業務で得た実践的なエッセンスを発信しています。
+						</p>
+					</div>
+
+					<div class="widget box">
+						<div class="widget-title"><Icon name="heroicons:users" class="icon-inline" /> TELUIS 妻</div>
+						<img class="profile-pic" src="/brand/テルイズ妻.png" alt="妻プロフィール" style="width: 100px; height: 100px; border-radius: 50%; margin: 0 auto 1rem; background-color: var(--border-color); display: block; object-fit: cover;" />
+						<p class="profile-desc" style="font-size: 0.9rem; color: var(--text-main); text-align: center; line-height: 1.6;">
+							共同運営者。<br/>時々記事を書いたりサポートしています。
+						</p>
+					</div>
+
+					<!-- サイドバー広告 -->
+					<div class="widget box" style="padding: 1rem; text-align: center;">
+						<div style="font-size:0.8rem; color:var(--text-light); margin-bottom:0.5rem;">スポンサーリンク</div>
+						<Ad />
+					</div>
+				</aside>
+			</div>
+		</main>
+		<Footer />
+		<CodeEnhancer />
+
+		<script>
+			document.addEventListener('DOMContentLoaded', () => {
+				// 目次を最初の見出しの直前に移動const toc = document.getElementById('toc-wrapper');
+				if (toc && toc.querySelector('.toc-container')) {
+					const firstHeading = document.querySelector('.prose h2, .prose h3, .prose h4');
+					if (firstHeading && firstHeading.parentNode && toc.nextElementSibling !== firstHeading) {
+						firstHeading.parentNode.insertBefore(toc, firstHeading);
+					}
+				}
+
+				const tables = document.querySelectorAll('.prose table');
+				tables.forEach(table => {
+					// 最初の行の列数をカウント（DOMの table.rows を使用して正確に取得）
+					
+					// 比較対象の数（列数 - 1）const targetCount = firstRowCols - 1;
+					
+					// 比較対象が3つ以上（全体で4列以上）の場合にロジックを適用
+					if (targetCount >= 3) {
+						// 1番左の列（比較項目）の幅を「文字幅＋パディング」程度に固定
+						
+						const firstTh = table.querySelector('thead th:first-child');
+						if (firstTh) {
+							firstTh.style.width = leftColWidth;
+							firstTh.style.minWidth = leftColWidth;
+						}
+						
+						table.style.tableLayout = 'fixed';
+						table.classList.add('table-fixed-left-col');
+						
+						if (targetCount > 3) {
+							// 比較対象が4つ以上の場合は、スクロール領域を作るために表自体の幅を広げる
+							// 画面に「左端の列 ＋ 比較対象3つ」がピッタリ収まる基準幅に対する倍率
+							const ratio = targetCount / 3;
+							table.style.width = `calc(${leftColWidth} + (100% - ${leftColWidth}) * ${ratio})`;
+							
+							// ラッパーを作成const wrapper = document.createElement('div');
+							wrapper.className = 'table-scroll-wrapper';
+							
+							// スクロールガイドを作成成const hint = document.createElement('div');
+							hint.className = 'table-scroll-hint';
+							hint.innerHTML = '<span>← 左右にスクロールできます →</span>';
+							
+							// DOMツリーに挿入･
+							table.parentNode?.insertBefore(wrapper, table);
+							wrapper.appendChild(hint);
+							wrapper.appendChild(table);
+						} else {
+							// 比較対象が3つの場合は画面幅にピッタリ収める
+						}
+					}
+				});
+			});
+		</script>
+	</body>
+</html>

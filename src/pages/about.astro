@@ -1,0 +1,37 @@
+---
+import AboutHeroImage from '../assets/images/teluis_avatar.jpg';
+import Layout from '../layouts/BlogPost.astro';
+---
+
+<Layout
+	title="QAAIXについて"
+	description="ソフトウェア品質保証（QA）・テスト自動化・テスト駆動開発（TDD）の実践知を発信するエンジニアメディア"
+	pubDate={new Date('2026-10-01')}
+	heroImage={AboutHeroImage}
+>
+	<h3>QAAIX（キューエーアイエックス）とは</h3>
+	<p>
+		<strong>QAAIX</strong> は、ソフトウェア品質保証（QA）、テスト自動化、テスト駆動開発（TDD）、CI/CDにおけるテストパイプライン構築などの実践知を発信するエンジニア向け技術メディアです。
+	</p>
+	<p>
+		単なるカバレッジの数値や表面的なツール導入にとどまらず、「壊れにくく保守しやすいテストアーキテクチャ」「現場に定着するテスト自動化戦略」「高速にフィードバックを返す開発プロセス」にフォーカスし、泥臭い実践経験と現場のハマりどころを共有します。
+	</p>
+
+	<hr />
+
+	<h3>発信テーマ</h3>
+	<ul>
+		<li><strong>テスト自動化アーキテクチャ:</strong> Playwright、Cypress、Selenium、Vitest、Jestなどを用いた保守性の高い自動テスト設計</li>
+		<li><strong>テスト駆動開発（TDD）＆ユニットテスト:</strong> リファクタリングを支える設計とモック/スタブの適切な境界線</li>
+		<li><strong>E2E / 統合テストの安定化:</strong> フレイキーテスト（Flaky Tests）の撲滅と実行速度の改善</li>
+		<li><strong>CI/CDテスト基盤:</strong> GitHub Actions等を活用したテスト並列実行・継続的品質ゲートの構築</li>
+		<li><strong>QA組織・プロセス改善:</strong> シフトレフト、探索的テスト、開発チームとQAのコラボレーション</li>
+	</ul>
+
+	<hr />
+
+	<h3>運営方針</h3>
+	<p>
+		「動くだけのコード」や「形骸化したテスト」を脱却し、チームが自信を持って本番リリースを続けられる基盤づくりに寄与することを目指しています。
+	</p>
+</Layout>
