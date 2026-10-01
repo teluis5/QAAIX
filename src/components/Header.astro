@@ -12,8 +12,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <header class="site-header">
 	<div class="header-inner">
 		<h2>
-			<a href="/" style="display: flex; align-items: center; gap: 0.5rem; text-decoration: none;">
-				<span style="font-weight: 800; font-size: 1.5rem; letter-spacing: 0.02em; color: var(--theme-accent, #2563eb);">{SITE_TITLE}</span>
+			<a href="/" style="display: flex; align-items: center; text-decoration: none;">
+				<div class="logo-box">
+					<img src="/brand/qaaix_logo.png" alt="QAAIX" class="logo-img" />
+				</div>
+				<span class="sr-only">{SITE_TITLE}</span>
 			</a>
 		</h2>
 		
@@ -82,6 +85,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 	h2 a {
 		color: var(--text-main);
 		text-decoration: none;
+	}
+	.logo-box {
+		background: #000000;
+		border-radius: 6px;
+		padding: 4px 10px;
+		display: flex;
+		align-items: center;
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+	.logo-box:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px rgba(29, 108, 246, 0.3);
+	}
+	.logo-img {
+		height: 32px;
+		width: auto;
+		display: block;
 	}
 
 	.header-right {
