@@ -1,0 +1,138 @@
+---
+title: "Salesforceテスト自動化で二段階認証を突破する現実解｜TOTP自動生成とJWT注入"
+description: "SalesforceのMFA強制化でCI/CDテストが止まる問題に直面していませんか？メール連携の泥沼を回避し、PlaywrightでTOTP（認証アプリ）を動的生成する方法と、JWTベアラフローでログイン画面ごと高速バイパスする実践テクニックを解説します。"
+pubDate: "2026-10-02"
+categories: ["Salesforce", "テスト自動化", "QA"]
+heroImage: "./hero.jpg"
+---
+import ProblemBox from '../../../components/ProblemBox.astro';
+import ConclusionBox from '../../../components/ConclusionBox.astro';
+
+<ProblemBox>
+- SalesforceのMFA（多要素認証）が強制され、CI/CDでの夜間テスト自動化が止まってしまった
+- メールに届く認証コードをAPIで取得しようとしたが、遅延やタイムアウトでテストが激しくフレイキー化している
+- ヘッドレスブラウザ環境で二段階認証を安全・高速に自動突破する決定的な実装パターンを知りたい
+</ProblemBox>
+
+## MFA強制化で崩壊する自動テスト：メールOTP連携は今すぐやめろ
+
+Salesforceで多要素認証（MFA）が契約上必須となり、多くのQAチームが悲鳴を上げました。
+
+従来の「IDとパスワードを入れてログイン」という素朴なテストシナリオは、すべて認証コード画面で撃沈します。
+
+ここで最もやってはいけない悪手があります。**メールの受信トレイをAPIで監視し、届いた認証コードをパースして入力するアプローチ**です。
+
+- メールの着信に10〜30秒のラグが発生し、テスト実行時間が数倍に膨れ上がる
+- スパム判定やネットワーク遅延でコードが届かず、CIがランダムに赤（失敗）になる
+- メールプロバイダの認証仕様変更やAPI制限で、テスト基盤ごと共倒れする
+
+貴重なQAリソースをメール連携のバグ調査で溶かしてはいけません。
+
+現場で採用すべき現実解は2つしかありません。**「TOTPシードキーによる動的コード生成」**か、**「JWTベアラフローによるログイン画面バイパス」**です。
+
+---
+
+## 現実解①：TOTPシードキーから動的にワンタイムパスワードを算出する
+
+最も汎用的な手法が**TOTP（Time-based One-Time Password）方式**です。
+
+既存の画面テストの流れを壊さずに二段階認証を突破できます。
+
+認証アプリと同じ計算ロジックを使います。これをテストコードの内部で直接実行する仕組みです。
+
+### 1. Salesforce側で秘密鍵（シードキー）を手動取得する
+
+Salesforceで認証アプリを接続する際、QRコードを読んではいけません。
+
+画面下の**「キーを手動で入力」**をクリックし、英数字の秘密鍵（Base32文字列）を控えます。
+
+この秘密鍵を、CI/CDのシークレット環境変数（例: `SF_TOTP_SECRET`）として厳重に保管します。
+
+### 2. Playwrightでの実装コード（TypeScript / otplib）
+
+Node.js環境であれば、軽量なTOTP計算ライブラリ `otplib` を活用します。
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { authenticator } from 'otplib';
+
+test('Salesforceに二段階認証（TOTP）を突破してログインする', async ({ page }) => {
+  const username = process.env.SF_USERNAME!;
+  const password = process.env.SF_PASSWORD!;
+  const totpSecret = process.env.SF_TOTP_SECRET!;
+
+  // 1. 通常のID/パスワード入力
+  await page.goto('https://test.salesforce.com');
+  await page.getByLabel('ユーザー名').fill(username);
+  await page.getByLabel('パスワード').fill(password);
+  await page.getByRole('button', { name: 'ログイン' }).click();
+
+  // 2. 二段階認証画面の表示を待機
+  const otpInput = page.getByLabel('確認コード');
+  await expect(otpInput).toBeVisible({ timeout: 10000 });
+
+  // 3. 現在時刻から6桁のワンタイムコードを即座に生成
+  const token = authenticator.generate(totpSecret);
+
+  // 4. コードを入力して確認
+  await otpInput.fill(token);
+  await page.getByRole('button', { name: '確認' }).click();
+
+  // 5. ホーム画面の表示確認
+  await expect(page).toHaveURL(/lightning\/page\/home/);
+});
+```
+
+メール受信を待つ必要は一切ありません。**ミリ秒単位で最新の6桁コードが計算されるため、待機時間は実質ゼロ**です。
+
+---
+
+## 現実解②：JWTベアラフローでセッションを直接ブラウザに注入する
+
+さらに実行速度と安定性を極限まで高めたいなら、**「UIログインそのものをスキップする」**のがシニアQAの常套手段です。
+
+Salesforceの「OAuth 2.0 JWTベアラフロー」を活用します。API経由で事前にセッションID（アクセストークン）を取得する手法です。
+
+### 仕組みと処理フロー
+
+```
+[テストランナー] --- (1) 秘密鍵で署名したJWTを送信 ---> [Salesforce OAuth]
+[テストランナー] <--- (2) Access Token (Session ID) 返却 - [Salesforce OAuth]
+      │
+      ▼ (3) ブラウザのCookie(sid)にトークンをセット
+[Playwright Browser] ---> (4) ホーム画面URLへ直接アクセス (ログイン画面スキップ)
+```
+
+1. 事前にSalesforceに「接続アプリケーション」を作成し、デジタル証明書を登録
+2. テスト実行開始時、裏側でNode.jsからOAuthエンドポイントへトークンリクエストを発行（約0.3秒）
+3. 取得したトークンを使い、PlaywrightのBrowserContextにセッションクッキー（`sid`）を直接セット
+4. ログイン後のトップページURLへ直接 `page.goto()` する
+
+ログイン画面の描画待ち、ID/パスワードの入力、MFA判定の処理が丸ごと消え去ります。**ログイン処理に要する時間は15秒から1秒未満へ短縮**されます。
+
+---
+
+## 2つのアプローチの使い分け比較
+
+| 項目 | ① TOTP動的生成 | ② JWTセッション注入 |
+| :--- | :--- | :--- |
+| **突破方式** | 画面上で6桁コード入力 | ログイン画面を完全バイパス |
+| **所要時間** | 約3〜5秒 | 約0.5〜1秒（爆速） |
+| **Salesforce設定** | ユーザごとのMFA秘密鍵登録のみ | 接続アプリ・デジタル証明書の設定が必要 |
+| **向いているテスト** | ログイン画面自体の挙動も担保したい場合 | 業務シナリオ（商談作成・承認フロー等）の大量実行 |
+
+ログイン画面自体の挙動も担保したいなら **① TOTP動的生成** です。その後の膨大な業務フローを高速に回したいなら **② JWT注入** を選ぶのが現場の鉄則です。
+
+---
+
+## まとめ：CI/CDを止めないテストアーキテクチャを組む
+
+<ConclusionBox>
+- **メールOTP監視は即刻廃止:** 遅延とフレイキーの温床であり、保守コストに見合わない
+- **画面テストはTOTP動的計算:** \`otplib\` でシードキーからミリ秒で6桁コードを生成する
+- **業務シナリオはJWTバイパス:** ログイン画面をスキップしてセッション注入し、実行時間を最短化する
+</ConclusionBox>
+
+「二段階認証があるから自動テストは無理だ」と諦める必要はありません。
+
+認証の仕組みを正しくハックし、壊れにくく高速なテストパイプラインを構築しましょう。
