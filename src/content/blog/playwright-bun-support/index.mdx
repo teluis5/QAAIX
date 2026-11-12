@@ -1,0 +1,169 @@
+---
+title: "PlaywrightがBunを正式サポート｜高速化の全貌と現場でハマる7つの制約"
+description: "Playwright v1.65.0で高速JSランタイムBunによるテストランナー実行が公式サポートされました。Babel不要のネイティブTS実行やCI短縮のメリットと、UIモード・スタックトレース等で直面する7大制限と実践的な導入判断を解説します。"
+pubDate: "2026-11-12"
+categories: ["Playwright", "テスト自動化", "QA"]
+heroImage: "./hero.jpg"
+---
+import ProblemBox from '../../../components/ProblemBox.astro';
+import ConclusionBox from '../../../components/ConclusionBox.astro';
+
+<ProblemBox>
+- Playwrightのテストスイートが肥大化し、CI/CDパイプラインの実行時間を大幅に短縮したい
+- Bunの高速性をE2Eテストに活用したいが、何が変わって何ができるようになったのか知りたい
+- 「bunx --bun」実行時の制約（Watchモード非対応やスタックトレースの挙動差異）を事前に把握して導入判断を下したい
+</ProblemBox>
+
+## Playwright v1.65.0でBun公式対応：何が実現したのか
+
+WebアプリケーションのE2Eテスト自動化デファクトスタンダードである**Playwright**が、バージョン**v1.65.0**において**Bun（v1.4.3以上）によるテストランナー実行を正式サポート**しました。
+
+これまでPlaywrightのテストランナーはNode.jsプロセス上で動作していました。
+
+本アップデートにより、Node.jsに代わる高速JavaScript/TypeScriptランタイムである**Bun**の上でテストランナー本体を直接駆動できるようになりました。
+
+### 最大の変化：Babelコンパイルパイプラインの完全バイパス
+
+従来のNode.js環境におけるPlaywrightは、TypeScriptで書かれたテストコードを内部のBabelトランスパイラとコンパイルキャッシュを経由してJavaScriptへ変換していました。
+
+Bun環境では、**Bun自身が内蔵する超高速なネイティブTypeScriptトランスパイラ**がテストファイルを直接解釈・実行します。
+
+- **Babelトランスパイルのオーバーヘッドが完全ゼロ化**
+- **大規模リポジトリにおけるテスト起動レイテンシの極小化**
+- **Playwright本体の公式CI（Linux環境）で継続テストされる第一級市民サポート**
+
+---
+
+## 基本的な動かし方：「--bun」フラグが必須
+
+Bun環境でPlaywrightテストを実行する際は、コマンドの指定方法に重要な注意点があります。
+
+単に `bunx playwright test` と打つだけでは、Bunではなく**既存のNode.jsが呼び出されます**。
+
+テストランナーを確実にBunネイティブで起動するには、必ず**`--bun`フラグ**を明示します。
+
+```bash
+# 正しい実行コマンド（Bunランタイムでテストランナーを駆動）
+bunx --bun playwright test
+
+# 特定のスペックファイルを実行する場合
+bunx --bun playwright test tests/login.spec.ts
+
+# プロジェクトやブラウザを指定する場合
+bunx --bun playwright test --project=chromium
+```
+
+package.jsonのscriptsに登録する場合は、以下のように記述するのが安全です。
+
+```json
+{
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:bun": "bunx --bun playwright test"
+  }
+}
+```
+
+---
+
+## 現場で直面する「7つの制限事項と挙動の違い」
+
+公式サポートとはいえ、Node.jsとBunのアーキテクチャ差分に起因する**重大な制限事項**が存在します。
+
+導入前に以下の7項目を必ず確認してください。
+
+| 機能項目 | Node.js実行時 | Bun実行時（--bun） | QA現場への影響 |
+| :--- | :--- | :--- | :--- |
+| **トランスパイル** | Babel + Playwrightキャッシュ | Bunネイティブトランスパイラ | 起動が高速化 |
+| **Watchモード** | 対応 | **非対応** | ローカル開発時のファイル監視自動再実行不可 |
+| **UIモード更新** | ファイル変更時に自動リロード | **自動リロード非対応** | UIモードでの快適なTDD開発が阻害 |
+| **差分実行（--only-changed）** | インポート依存を追跡 | **インポート追跡不可** | 変更ファイル検知が不完全になるリスク |
+| **tsconfig指定** | `--tsconfig` 有効 | **無視される（効果なし）** | カスタムtsconfig運用環境で注意 |
+| **スタックトレース** | 完全な非同期フレーム保持 | **非同期フレーム欠落・クラス名省略** | 障害箇所の特定（デバッグ）難易度が上昇 |
+| **トレース内ログ** | `console.log` がTraceに記録 | **Trace/UIモードに記録されない** | トレースビューアでの原因究明に影響 |
+
+### 1. Watchモード・UIモードの自動リロードが動かない
+
+Playwrightの強力な武器である「UIモード（`--ui`）」や「Watchモード」において、コード変更を検知してテストを自動再実行する仕組みがBunでは現在機能しません。
+
+ローカルで試行錯誤しながらテストシナリオを書き進めるフェーズでは、依然としてNode.js環境を使用する方が開発者体験に優れています。
+
+### 2. スタックトレースからクラス名が消える
+
+Bun実行環境では、APIレポートにおけるクラス名が省略されます。
+
+例えば、エラーログやステップ名が `locator.click` ではなく `click` と記録されます。
+
+また、スタックトレースから非同期フレーム（async frames）が欠落するため、複雑なPage Objectパターンを多層構造で組んでいるプロジェクトでは、テスト失敗箇所のスタック特定に手間取る可能性があります。
+
+### 3. Trace Viewerにconsole.logが出力されない
+
+テスト失敗時にPlaywright Trace Viewerを開いても、テストコード内で仕込んだ `console.log` の出力が記録されません。
+
+CIでのフレイキーテスト調査においてコンソールログのタイムラインを頼りにしている現場では、運用設計の見直しが必要です。
+
+---
+
+## CI/CDパイプライン導入コード例（GitHub Actions）
+
+Bunサポートの恩恵を最も大きく享受できるのは、**CI/CD環境でのヘッドレス一括実行**です。
+
+Ubuntuランナー上でBunを用いてPlaywrightを実行するGitHub Actionsのワークフロー定義例です。
+
+```yaml
+name: Playwright E2E Tests with Bun
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.3
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    - name: Install Playwright Browsers
+      run: bunx playwright install --with-deps chromium
+
+    - name: Run Playwright tests with Bun
+      run: bunx --bun playwright test --project=chromium
+
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 14
+```
+
+ブラウザバイナリのインストール自体はPlaywrightの標準仕様に従い、テスト実行部分のみ `--bun` を通して起動します。
+
+---
+
+## 導入判断マトリクス：今すぐ移行すべきか？
+
+今回のアップデートを踏まえ、QAチームやテスト自動化エンジニアが取るべき実践的なスタンスは以下の通りです。
+
+| 利用フェーズ・用途 | 推奨ランタイム | 判定理由 |
+| :--- | :--- | :--- |
+| **ローカル開発・テスト新規作成** | **Node.js** | UIモードのリアルタイム再実行と完全なスタックトレースが必須なため |
+| **PR作成時のスモークテスト（CI）** | **Bun** | ファイル数が多いリポジトリで起動短縮と依存解決の爆速化が活きるため |
+| **深夜の全量リグレッションテスト** | **要検証（Node.js推奨）** | エラー時のTrace Viewer解析にコンソールログや非同期スタックが必要なため |
+
+<ConclusionBox>
+- Playwright v1.65.0により、高速ランタイムBun上でテストランナーを公式に駆動可能になった
+- 実行には `bunx --bun playwright test` のフラグ指定が必須であり、Babelパイプラインを排除した高速起動が得られる
+- Watchモード・UIモード自動更新の非対応、スタックトレースの非同期フレーム欠落など7つの制約があるため、まずはCIのヘッドレス実行から検証・導入するのが鉄則
+</ConclusionBox>
