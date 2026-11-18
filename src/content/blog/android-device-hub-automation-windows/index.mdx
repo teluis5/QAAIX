@@ -1,0 +1,108 @@
+---
+title: "Windows×デバイスハブで構築するAndroid実機自動テスト基盤｜ADB安定化と並列運用の設計"
+description: "Windows PCにUSBデバイスハブを接続し、複数台のAndroid実機を並列自動テスト・運用する基盤の構築ノウハウを解説。Windows特有のUSB省電力設定の罠から、UiAutomator2のsystemPort分離、ADBのoffline自動復旧まで実務ベースでまとめます。"
+pubDate: "2026-11-18"
+categories: ["Android", "テスト自動化", "QA"]
+heroImage: "./hero.jpg"
+---
+import ProblemBox from '../../../components/ProblemBox.astro';
+import ConclusionBox from '../../../components/ConclusionBox.astro';
+
+<ProblemBox>
+- Windows PCに複数のAndroid実機をUSBハブで繋いでいるが、いつの間にか `adb devices` が `offline` になってテストが止まる
+- Appium（UiAutomator2）で複数端末を並列実行すると、ポート競合やセッション切断が多発する
+- メーカー独自の省電力機能やUSBドライバ問題など、Windows×Android実機運用ならではのハマりどころを事前に潰したい
+</ProblemBox>
+
+## Windows × デバイスハブによるAndroid実機自動化の強み
+
+iOS実機の自動化にはmacOSホストが必須ですが（詳細は [macOS×デバイスハブで構築するiOS実機自動テスト基盤](/blog/ios-device-hub-automation-macos/) を参照）、Androidは**Windows PCをホストとして安価かつスケーラブルに実機ファームを構築できる**のが最大の強みです。
+
+また、AndroidはOSの自由度が高く、`ADB（Android Debug Bridge）` を通じた端末状態の取得、画面ロック解除、アプリデータのクリア、UI操作の自動化がmacOS＋iOSよりも柔軟に行えます。
+
+しかし、複数台をUSBデバイスハブに常時接続して並列稼働させると、**Windows特有のUSB電源管理やADBの仕様に起因するトラブル**が頻発します。本記事では、安定稼働するAndroid実機テスト基盤の設計ポイントを解説します。
+
+---
+
+## 物理・Windows OSレイヤーの罠と必須設定
+
+### 1. 「USBセレクティブサスペンド」とデバイスマネージャーの省電力設定を切る
+Windowsで複数台のAndroidを繋いでテストしていると、**数時間後に突然 `adb devices` 上で端末が `offline` になる**現象がよく起きます。原因の多くはWindowsの省電力機能です。
+
+- **コントロールパネル（電源オプション）**: 「USBのセレクティブサスペンドの設定」を **無効** にする。
+- **デバイスマネージャー**: 「ユニバーサル シリアル バス コントローラー」配下の各 `USB ルート ハブ` および `汎用 USB ハブ` のプロパティを開き、「電源の管理」タブにある **「電力の節約のために、コンピューターでこのデバイスの電源をオフにできるようにする」のチェックをすべて外す**。
+
+### 2. セルフパワーUSBハブの選定とドライバ統一
+iOSと同様にバスパワーハブは電力不足で通信断を起こすため、**各ポート2A以上供給できるセルフパワー（ACアダプタ付き）USBハブ**が必須です。
+
+また、WindowsではメーカーごとにUSBドライバ（Google USB Driver、Samsung、Xiaomi、OPPO等）が異なります。複数メーカーの端末を混在させる場合、Windows Update経由で正しいADB Interfaceドライバが当たっているか、デバイスマネージャー上で「Android Device > Android Composite ADB Interface」として認識されているかを最初に確認してください。
+
+---
+
+## ソフトウェア設計：複数台を並列制御するアーキテクチャ
+
+```
+[CI/CD (GitHub Actions Runner / Jenkins)]
+       │
+       ▼
+[Windows Host]
+  ├── Appium Server (Port 4723) ──▶ UiAutomator2 (systemPort: 8201) ──▶ Pixel (Serial-1)
+  ├── Appium Server (Port 4725) ──▶ UiAutomator2 (systemPort: 8202) ──▶ Galaxy (Serial-2)
+  └── ADB Server (Port 5037: 全端末のUSB通信を統括)
+```
+
+### 1. シリアル番号と `systemPort` の完全分離
+Appiumの `UiAutomator2` ドライバは、Android端末内部でHTTPサーバーを起動し、ホストPCのポート（デフォルト `8200`）へポートフォワーディングして通信します。
+
+複数台を並列実行する際、この **`systemPort` を端末ごとに変えないと、後から起動したテストが先に動いていた端末の通信を奪い、セッションがクラッシュします。**
+
+```bash
+# 接続中のAndroid実機とシリアル番号を確認
+adb devices -l
+```
+
+Capabilitiesでは、端末ごとに `udid`（`adb devices` で表示されるシリアル番号）と `systemPort`（`8201`, `8202`...）を明確に分けて指定します。
+
+```json
+{
+  "platformName": "Android",
+  "appium:automationName": "UiAutomator2",
+  "appium:udid": "1A234567890ABCD",
+  "appium:systemPort": 8201,
+  "appium:chromedriverPort": 9515,
+  "appium:noReset": true
+}
+```
+
+※WebViewやChromeを操作するテストを並列で回す場合は、`chromedriverPort` も端末ごとに重複しないよう分離してください。
+
+---
+
+## 長期運用で直面するAndroid特有のトラブルと対策
+
+### 1. `offline` / `unauthorized` 状態の検知と自動復旧
+長時間運用していると、ADBデーモンが不安定になり端末が `offline` になることがあります。
+
+- **対策**: テスト実行前のプリフライトチェックで `adb get-state` を確認し、`device` 以外が返った場合は `adb reconnect offline` または `adb kill-server && adb start-server` を自動実行するラッパーを用意します。
+- それでも復帰しない場合に備え、ポート単位で電源をON/OFFできるスマートUSBハブを組み合わせると完全無人運用が可能になります。
+
+### 2. メーカー独自の「USBデバッグ制限」と「バッテリー最適化」
+AndroidはメーカーごとにOSのカスタマイズが強く、テスト自動化の邪魔をする独自仕様が存在します。
+
+- **Xiaomi (HyperOS / MIUI)**: 「開発者向けオプション」内の **「USBデバッグ（セキュリティ設定）」** をONにしないと、ADB経由のタップや文字入力が拒否されます。また「MIUI最適化」が有効だと要素取得が崩れるケースがあります。
+- **Galaxy / OPPO / Pixel**: 画面スリープやDozeモードに入るとテストが止まるため、開発者向けオプションの **「スリープモードにしない（充電中）」** を必ずONにし、テスト対象アプリやAppium Settingsのバッテリー最適化を「制限なし」に設定してください。
+
+### 3. バッテリー膨張対策（給電スケジュール）
+Windowsに24時間繋ぎっぱなしにする場合も、iOSと同様にバッテリーの過充電による膨張リスクがあります。テスト稼働時間外はスマートハブ側でUSB給電を遮断するか、Android端末側で「充電を80%で停止する保護機能（Galaxyのバッテリー保護など）」を有効にしておくことを強く推奨します。
+
+---
+
+## まとめ
+
+<ConclusionBox>
+- **Windowsの省電力設定を潰す:** USBセレクティブサスペンド無効化と、デバイスマネージャーのUSBハブ電源管理OFFが必須
+- **ポート分離を徹底する:** 並列実行時は端末ごとに `udid`・`systemPort`・`chromedriverPort` を重複させない
+- **端末固有の罠を先に潰す:** 充電中スリープ無効化、メーカー特有のUSBデバッグ制限解除、およびバッテリー保護（80%上限や給電制御）を標準セットアップ手順に組み込む
+</ConclusionBox>
+
+Windows × デバイスハブ構成は、ハードウェアコストを抑えつつ多数のAndroid機種・OSバージョンを並列検証できる非常に実用的な選択肢です。まずはWindowsのUSB電源設定を見直し、2〜3台の並列稼働から安定性を検証してみてください。
